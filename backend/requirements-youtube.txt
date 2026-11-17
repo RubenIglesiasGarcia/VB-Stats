@@ -4,3 +4,7 @@ yt-dlp[default]>=2026.10
 
 # Explicit dependency makes a missing JS challenge solver a build error, not a runtime surprise.
 yt-dlp-ejs
+
+# Google Gemini can inspect PUBLIC YouTube URLs without downloading the MP4.
+# Requires GEMINI_API_KEY (server-only) and explicit VBSTATS_GEMINI_ENABLE=1.
+google-genai>=1.0
