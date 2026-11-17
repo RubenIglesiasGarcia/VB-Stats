@@ -22,8 +22,9 @@ from backend.vision.ravel import readiness as ravel_readiness, process_ravel_vid
 from backend.vision.auto_match import make_draft, jersey_team_votes, preview_stats
 from backend.vision.youtube_import import video_id_from_url, import_video, ImportCancelled, availability as youtube_availability
 from backend.vision.jersey_ocr import identify_track_numbers, available as ocr_availability
+from backend.vision.long_match import download_budget
 
-VERSION='0.9.0'
+VERSION='0.9.1'
 PUBLIC_MODE=os.getenv('VBSTATS_PUBLIC_MODE','0')=='1'
 ACCESS_TOKEN=os.getenv('VBSTATS_ACCESS_TOKEN','')
 if PUBLIC_MODE and len(ACCESS_TOKEN)<24:
@@ -35,8 +36,8 @@ MAX_UPLOAD=int(os.getenv('VBSTATS_MAX_UPLOAD_MB','384' if PUBLIC_MODE else '3072
 MAX_DURATION=900
 MAX_QUEUED=1 if PUBLIC_MODE else 2
 MAX_STORED=2 if PUBLIC_MODE else 5
-MAX_TOTAL_DISK=(3 if PUBLIC_MODE else 12)*1024*1024*1024
-MAX_AUTO_SECONDS=int(os.getenv('VBSTATS_MAX_VIDEO_SECONDS','7200' if PUBLIC_MODE else str(6*3600)))
+MAX_TOTAL_DISK=int(os.getenv('VBSTATS_MAX_TOTAL_DISK_MB','430' if PUBLIC_MODE else '12288'))*1024*1024
+MAX_AUTO_SECONDS=int(os.getenv('VBSTATS_MAX_VIDEO_SECONDS','10800' if PUBLIC_MODE else str(6*3600)))
 TTL=24*3600
 pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='vb-stats-vision')
 lock=Lock()
@@ -179,7 +180,7 @@ class StartJob(BaseModel):
 
 class StartAutoJob(BaseModel):
     uploadId: str=Field(pattern=r'^[0-9a-f-]{36}$')
-    chunkSeconds: int=Field(default=600,ge=60,le=MAX_DURATION)
+    chunkSeconds: int=Field(default=60,ge=30,le=MAX_DURATION)
     teamAColor: str=Field(default='#265bac',pattern=r'^#[0-9a-fA-F]{6}$')
     teamBColor: str=Field(default='#b9373f',pattern=r'^#[0-9a-fA-F]{6}$')
     rosterA: list[int]=Field(default_factory=list,max_length=40)
@@ -196,7 +197,7 @@ class StartAutoJob(BaseModel):
 class StartYouTubeJob(BaseModel):
     url: str=Field(min_length=24,max_length=800)
     authorized: bool
-    chunkSeconds: int=Field(default=600,ge=60,le=MAX_DURATION)
+    chunkSeconds: int=Field(default=60,ge=30,le=MAX_DURATION)
     teamAColor: str=Field(default='#265bac',pattern=r'^#[0-9a-fA-F]{6}$')
     teamBColor: str=Field(default='#b9373f',pattern=r'^#[0-9a-fA-F]{6}$')
     rosterA: list[int]=Field(default_factory=list,max_length=40)
@@ -342,8 +343,15 @@ def _run_youtube_auto_job(jid: str, uid: str, options: StartYouTubeJob) -> None:
         with lock:
             if jid in jobs:jobs[jid].update(items)
     try:
-        mutate(status='running',phase='downloading',stage='Obteniendo vídeo autorizado desde YouTube')
-        data=import_video(options.url,folder,max_bytes=MAX_UPLOAD,max_duration_seconds=MAX_AUTO_SECONDS,
+        mutate(status='running',phase='downloading',stage='Seleccionando una versión de vídeo que quepa en el servidor')
+        DATA_DIR.mkdir(parents=True,exist_ok=True)
+        free_bytes=shutil.disk_usage(DATA_DIR).free
+        with lock:
+            used_bytes=sum(int(u.get('size',0)) for u in uploads.values())
+        budget=download_budget(MAX_UPLOAD,MAX_TOTAL_DISK,used_bytes,free_bytes)
+        if budget<50*1024*1024:
+            raise RuntimeError('No queda espacio suficiente para importar un partido largo. Borra vídeos anteriores o amplía el almacenamiento.')
+        data=import_video(options.url,folder,max_bytes=budget,max_duration_seconds=MAX_AUTO_SECONDS,
                           cancelled=stop_flags[jid].is_set,
                           progress=lambda fraction:mutate(downloadProgress=round(fraction*100,1)))
         if stop_flags[jid].is_set():raise ImportCancelled('Importación cancelada.')
@@ -354,8 +362,9 @@ def _run_youtube_auto_job(jid: str, uid: str, options: StartYouTubeJob) -> None:
         with lock:
             uploads[uid]={'path':str(dest),'size':dest.stat().st_size,'created':time.time(),
                           'name':data['name'],'source':'youtube','youtubeId':data['videoId']}
+        quality=f"{data['formatHeight']}p" if data.get('formatHeight') else 'calidad compacta'
         mutate(phase='analysis',progress=0,downloadProgress=100,
-               stage='Vídeo obtenido; comenzando análisis completo')
+               downloadedResolution=quality,stage=f'Vídeo obtenido ({quality}); analizando el partido por tramos')
         opts=StartAutoJob(uploadId=uid,chunkSeconds=options.chunkSeconds,
                           teamAColor=options.teamAColor,teamBColor=options.teamBColor,
                           rosterA=options.rosterA,rosterB=options.rosterB)
