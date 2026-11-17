@@ -5,7 +5,7 @@ import {
   ChevronRight, CircleHelp, Clock3, CloudOff, Command, CornerDownLeft, Download,
   FileJson, FileSpreadsheet, FileUp, Flag, Info, Keyboard, Layers3, Link2,
   ListFilter, Maximize2, Minus, MoreHorizontal, Pause, Pencil, Play, Plus, RotateCcw,
-  Save, Search, Settings2, ShieldCheck, SkipBack, SkipForward, Sparkles, Target,
+  Save, Scan, Search, Settings2, ShieldCheck, SkipBack, SkipForward, Sparkles, Target,
   Trash2, Undo2, UploadCloud, Users, Video, Volleyball, X
 } from 'lucide-react';
 import {
