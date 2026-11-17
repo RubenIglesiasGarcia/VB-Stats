@@ -574,7 +574,9 @@ def _run_auto_job(jid:str,uid:str,opts:StartAutoJob) -> None:
             length=min(opts.chunkSeconds,duration-offset)
             mutate(stage=f'Tramo {index+1} de {total_chunks}',processedSegments=index,totalSegments=total_chunks)
             def progress(pct:float,_frames:int,idx=index):
-                mutate(progress=round(100*(idx+max(0,min(1,pct)))/total_chunks,1))
+                phase_name='Preparando vídeo' if pct<.125 else 'Seguimiento de balón y jugadores'
+                mutate(progress=round(100*(idx+max(0,min(1,pct)))/total_chunks,1),
+                       stage=f'Tramo {idx+1}/{total_chunks} · {phase_name}')
             result=process_ravel_video(video,start_seconds=offset,duration_seconds=length,
                                        progress=progress,cancelled=stop_flags[jid].is_set)
             if result['cancelled'] or stop_flags[jid].is_set():
