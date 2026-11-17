@@ -1,9 +1,49 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vb-stats",
+  "main": "./worker/index.js",
   "compatibility_date": "2026-11-17",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*",
+      "/capabilities"
+    ]
+  },
+  "ratelimits": [
+    {
+      "name": "VBSTATS_API_LIMIT",
+      "namespace_id": "909901",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    },
+    {
+      "name": "VBSTATS_GUEST_START_LIMIT",
+      "namespace_id": "909902",
+      "simple": {
+        "limit": 1,
+        "period": 60
+      }
+    },
+    {
+      "name": "VBSTATS_GLOBAL_START_LIMIT",
+      "namespace_id": "909903",
+      "simple": {
+        "limit": 2,
+        "period": 60
+      }
+    },
+    {
+      "name": "VBSTATS_UPLOAD_LIMIT",
+      "namespace_id": "909904",
+      "simple": {
+        "limit": 1,
+        "period": 60
+      }
+    }
+  ]
 }
