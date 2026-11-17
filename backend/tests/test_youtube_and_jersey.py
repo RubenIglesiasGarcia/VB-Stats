@@ -50,9 +50,11 @@ def test_youtube_preflight_respects_consent_and_six_hour_duration():
 
 def test_import_downloads_one_known_video_and_caps_size(tmp_path,monkeypatch):
     seen=[]
+    config=[]
     class FakeDL:
         def __init__(self,opts):
             self.opts=opts
+            config.append(opts)
         def __enter__(self):return self
         def __exit__(self,*a):pass
         def extract_info(self,url,download):
@@ -75,6 +77,7 @@ def test_import_downloads_one_known_video_and_caps_size(tmp_path,monkeypatch):
     assert r['path'].is_file() and r['videoId']=='ul-pA6pLWX8'
     assert progress[-1]==1.0
     assert seen and all('ul-pA6pLWX8' in item[0] for item in seen)
+    assert config and all(opts.get('js_runtimes') == {'node': {}} for opts in config)
 
 
 def test_ocr_stays_unknown_on_one_frame_or_conflicting_votes():
