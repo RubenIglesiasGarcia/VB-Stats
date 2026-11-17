@@ -563,7 +563,10 @@ def _run_auto_job(jid:str,uid:str,opts:StartAutoJob) -> None:
             old_ocr=jobs.get(jid,{}).get('_ocr_samples',[])
         segments=list(old_chunks);raw_events=list(old_events);ocr_samples=list(old_ocr)
         total_chunks=max(1,__import__('math').ceil(duration/opts.chunkSeconds))
+        run_started=time.monotonic()
+        freshly_processed_video=0.0
         for index in range(len(segments),total_chunks):
+            chunk_started=time.monotonic()
             if stop_flags[jid].is_set():
                 mutate(status='cancelled',error='Análisis detenido. No se generó un informe completo.')
                 return
@@ -591,7 +594,16 @@ def _run_auto_job(jid:str,uid:str,opts:StartAutoJob) -> None:
                 ocr_samples.append({'trackKey':f'{index}:{sample["trackId"]}',
                                     'second':sample['second'],'box':sample['box'],
                                     'confidence':sample.get('confidence',0)})
+            chunk_elapsed=max(.001,time.monotonic()-chunk_started)
+            freshly_processed_video+=length
+            runtime=max(.001,time.monotonic()-run_started)
+            speed=freshly_processed_video/runtime
+            # Timing is empirical: at least one completed chunk is required.
+            remaining_video=max(0,duration-(offset+length))
+            estimate=round(remaining_video/speed) if speed>0 else None
             mutate(processedSegments=index+1,progress=round(100*(index+1)/total_chunks,1),
+                   elapsedSeconds=round(runtime),etaSeconds=estimate,
+                   processingSpeed=round(speed,4),lastChunkSeconds=round(chunk_elapsed,1),
                    _chunks=list(segments),_raw_events=list(raw_events),_ocr_samples=list(ocr_samples))
         mutate(stage='Asignando equipos y preparando informe')
         colors=(parse_rgb(opts.teamAColor),parse_rgb(opts.teamBColor))
