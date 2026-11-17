@@ -8,7 +8,10 @@ Only processes the requested preview windows; never estimates model accuracy.
 from __future__ import annotations
 import argparse
 import json
-import resource
+try:
+    import resource
+except ImportError:  # Windows
+    resource = None
 import sys
 import time
 from pathlib import Path
@@ -43,7 +46,7 @@ def benchmark(video: Path, seconds: int, chunks: int) -> dict:
             'videoSeconds':total_video,'wallSeconds':round(total_wall,2),
             'videoSecondsPerRealSecond':round(speed,4),
             'approximate90MinWallHours':round(5400/max(speed,1e-9)/3600,2),
-            'peakChildResidentMemoryKB':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
+            'peakChildResidentMemoryKB':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss if resource else None,
             'warning':'Extrapolación indicativa: la velocidad puede cambiar con resolución, contenido, cola y hardware. No mide exactitud deportiva.'}
 
 
