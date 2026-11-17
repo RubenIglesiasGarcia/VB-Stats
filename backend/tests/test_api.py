@@ -8,7 +8,7 @@ def test_health() -> None:
     with TestClient(app) as client:
         response = client.get('/health')
     assert response.status_code == 200
-    assert response.json() == {'status': 'ok', 'version': '0.9.0'}
+    assert response.json() == {'status': 'ok', 'version': '0.9.1'}
 
 
 def test_capabilities_are_truthful() -> None:
