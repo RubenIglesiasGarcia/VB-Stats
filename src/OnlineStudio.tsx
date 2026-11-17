@@ -6,7 +6,7 @@ import {formatTime} from './model';
 import './online.css';
 const BASE=(import.meta.env.VITE_ANALYSIS_API||'').replace(/\/$/,'');
 const REPORT_KEY='vbstats-online-last-report';const JOB_KEY='vbstats-online-job';
-type Job={jobId:string;status:'queued'|'running'|'completed'|'failed'|'cancelled';progress:number;phase?:string;stage?:string;error?:string;processedSegments?:number;totalSegments?:number;autoAnalysis?:AutoAnalysis;downloadProgress?:number};
+type Job={jobId:string;status:'queued'|'running'|'completed'|'failed'|'cancelled';progress:number;phase?:string;stage?:string;error?:string;processedSegments?:number;totalSegments?:number;autoAnalysis?:AutoAnalysis;downloadProgress?:number;downloadedResolution?:string};
 type Caps={engines?:{ravel?:{ready:boolean;note:string}};youtube_import?:boolean;jersey_recognition?:boolean;maxUploadMB?:number;maxAutoDurationSeconds?:number;};
 const allSkills=['saque','recepción','ataque','bloqueo','defensa','colocación'] as const;
 function loadReport():AutoAnalysis|undefined{try{const s=localStorage.getItem(REPORT_KEY);return s?sanitizeAuto(JSON.parse(s)):undefined;}catch{return undefined;}}
@@ -41,13 +41,13 @@ export function OnlineStudio(){
       if(j.autoAnalysis){const valid=sanitizeAuto(j.autoAnalysis);if(valid){setReport(valid);saveReport(valid);setReviews(getReviews(valid));setTab('team');setError('')}}
       sessionStorage.removeItem(JOB_KEY);setJobId('');
     }else if(j.status==='failed'||j.status==='cancelled'){
-      setError(j.error||'El análisis se interrumpió.');sessionStorage.removeItem(JOB_KEY);setJobId('');
+      setError(j.error||'El análisis se interrumpió.');// Keep the job ID so the coach can retry from its last saved segment.
     }
    }catch(e){if(alive){setError(e instanceof Error?e.message:'Error de conexión')}}};
    void poll();const timer=window.setInterval(()=>void poll(),3500);return()=>{alive=false;window.clearInterval(timer)};
  },[jobId]);
  async function start(){if(!connected||!caps?.engines?.ravel?.ready){setError(caps?.engines?.ravel?.note||'IA no disponible');return;}if(mode==='youtube'&&!authorized){setError('Confirma que tienes permiso para procesar ese vídeo.');return;}
-  setBusy(true);setError('');try{let r:{jobId:string};const common={chunkSeconds:600,teamAColor:'#265bac',teamBColor:'#b9373f'};
+  setBusy(true);setError('');try{let r:{jobId:string};const common={chunkSeconds:60,teamAColor:'#265bac',teamBColor:'#b9373f'};
    if(mode==='youtube'){
     if(!caps.youtube_import)throw Error('El servidor no tiene importación de YouTube disponible.');
     r=await api('/api/analysis/youtube-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...common,url:url.trim(),authorized})});
@@ -57,6 +57,10 @@ export function OnlineStudio(){
    sessionStorage.setItem(JOB_KEY,r.jobId);setJobId(r.jobId);setJob({jobId:r.jobId,status:'queued',progress:0,stage:'Preparando el partido'});
   }catch(e){setError(e instanceof Error?e.message:'No se pudo iniciar')}finally{setBusy(false)}
  }
+ async function resume(){if(!jobId)return;setBusy(true);setError('');try{
+  await api(`/api/analysis/jobs/${jobId}/resume`,{method:'POST'});
+  setJob(j=>j?{...j,status:'queued',error:undefined,stage:'Reanudando desde el último tramo guardado'}:j);
+ }catch(e){setError(e instanceof Error?e.message:'No se pudo reanudar el análisis');}finally{setBusy(false)}}
  function updateReport(data:AutoAnalysis){setReport(data);saveReport(data)}
  function updateReview(id:string,review:Reviews[string]|null){const next={...reviews};if(review)next[id]=review;else delete next[id];setReviews(next);if(report)try{localStorage.setItem(keyFor(report),JSON.stringify(next));}catch{}}
  const metrics=useMemo(()=>report?autoMetrics(report):null,[report]);
@@ -73,10 +77,10 @@ export function OnlineStudio(){
  {!connected&&<div className="os-info" role="status"><AlertCircle size={16}/> {error||'Comprobando la disponibilidad del motor de IA…'} El resto de la web se puede explorar sin cuenta.</div>}
  <section className="os-hero os-card"><div className="os-tag"><Activity size={14}/> MOTOR RAVEL-VB-013</div><h1>Del partido a las decisiones.</h1><p>Analiza el vídeo completo de forma automática. Consulta contactos, posibles acciones y dorsales; verifica resultados para calcular porcentajes de errores y eficiencia.</p><div className="os-mode"><button className={mode==='youtube'?'selected':''} onClick={()=>setMode('youtube')}><Youtube size={17}/> Enlace de YouTube</button><button className={mode==='file'?'selected':''} onClick={()=>setMode('file')}><FileVideo size={17}/> Subir un vídeo</button></div>
  <div className="os-source">{mode==='youtube'?<><label htmlFor="os-youtube">Enlace del partido</label><input id="os-youtube" type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={e=>setUrl(e.target.value)}/><label className="os-checkbox"><input type="checkbox" checked={authorized} onChange={e=>setAuthorized(e.target.checked)}/> Tengo autorización para procesar esta grabación.</label></>:<><input type="file" accept="video/mp4,video/quicktime,video/webm" className="os-hidden" ref={fileInput} onChange={e=>setFile(e.target.files?.[0]||null)}/><button className="os-file" onClick={()=>fileInput.current?.click()}><UploadCloud size={20}/>{file?`${file.name} · ${(file.size/1048576).toFixed(1)} MB`:`Seleccionar vídeo (máx. ${caps?.maxUploadMB||384} MB)`}</button></>}
- <div className="os-submit"><span><ShieldCheck size={14}/> Sin cuenta · Máximo {Math.round((caps?.maxAutoDurationSeconds||7200)/60)} min</span><button className="os-primary" disabled={busy||Boolean(jobId)||!caps?.engines?.ravel?.ready||(mode==='youtube'&&(!url||!authorized))||(mode==='file'&&!file)} onClick={()=>void start()}>{busy?'Preparando…':'Analizar partido completo'} <ChevronRight size={17}/></button></div></div>
+ <div className="os-submit"><span><ShieldCheck size={14}/> Sin cuenta · Máximo {Math.round((caps?.maxAutoDurationSeconds||7200)/60)} min</span><button className="os-primary" disabled={busy||(Boolean(jobId)&&!(['failed','cancelled'].includes(job?.status||'')))||!caps?.engines?.ravel?.ready||(mode==='youtube'&&(!url||!authorized))||(mode==='file'&&!file)} onClick={()=>void start()}>{busy?'Preparando…':'Analizar partido completo'} <ChevronRight size={17}/></button></div></div>
  {!caps?.engines?.ravel?.ready&&<div className="os-info"><AlertCircle size={16}/>{caps?.engines?.ravel?.note||'El motor aún no está listo.'}</div>}
  </section>
- {jobId&&job&&<section className="os-progress os-card"><div className="os-progress-head"><div className="os-tag">PROCESAMIENTO EN CURSO</div><h2>{job.stage||'Analizando acciones del partido'}</h2><p>{job.phase==='downloading'?'Descargando grabación permitida…':`Tramos: ${job.processedSegments??0} de ${job.totalSegments??'—'}`}</p></div><div className="os-track"><div style={{width:`${Math.max(1,Math.min(100,job.phase==='downloading'?job.downloadProgress||0:job.progress||0))}%`}}/></div><small>{job.phase==='downloading'?'Descarga':'Inferencia de IA'} · {Math.round(job.phase==='downloading'?job.downloadProgress||0:job.progress||0)}% · Puedes dejar la pestaña abierta durante el análisis. El trabajo podría interrumpirse si se reinicia el servidor.</small></section>}
+ {jobId&&job&&<section className="os-progress os-card"><div className="os-progress-head"><div className="os-tag">PROCESAMIENTO EN CURSO</div><h2>{job.stage||'Analizando acciones del partido'}</h2><p>{job.phase==='downloading'?'Descargando grabación permitida…':`Tramos: ${job.processedSegments??0} de ${job.totalSegments??'—'}`}</p></div><div className="os-track"><div style={{width:`${Math.max(1,Math.min(100,job.phase==='downloading'?job.downloadProgress||0:job.progress||0))}%`}}/></div><small>{job.phase==='downloading'?'Descarga':'Inferencia de IA'} · {Math.round(job.phase==='downloading'?job.downloadProgress||0:job.progress||0)}% · Puedes dejar la pestaña abierta durante el análisis. El trabajo podría interrumpirse si se reinicia el servidor.</small>{['failed','cancelled'].includes(job.status)&&<div className="os-submit"><span>Se conservan los tramos terminados mientras el vídeo siga disponible.</span><button className="os-primary" disabled={busy} onClick={()=>void resume()}>Reanudar análisis <ChevronRight size={17}/></button></div>}</section>}
  {error&&<div className="os-error" role="alert"><AlertCircle size={17}/>{error}<button onClick={()=>setError('')}>Cerrar</button></div>}
  {report&&metrics&&perf&&<><section className="os-report-heading"><div><div className="os-tag">INFORME DEL PARTIDO · {report.engine.toUpperCase()}</div><h2>{report.sourceName}</h2><p>Hay datos automáticos provisionales y resultados deportivos comprobados por separado.</p></div><button className="os-secondary" onClick={()=>download('VB-Stats-Estadisticas-Verificadas.csv',performanceCSV(report,reviews))} disabled={perf.verified===0}><Download size={16}/> CSV verificado</button></section>
  <div className="os-stats"><Stat label="Rallies posibles" value={metrics.rallies} note="Detectados, no puntos confirmados"/><Stat label="Contactos detectados" value={metrics.contacts} note="Predicciones de la IA"/><Stat label="Dorsales reconocidos" value={metrics.knownPlayers} note="Requieren comprobación"/><Stat label="Resultados verificados" value={perf.verified} note={`De ${perf.detected} detecciones`}/></div>
