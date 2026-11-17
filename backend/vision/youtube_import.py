@@ -19,6 +19,27 @@ class ImportCancelled(RuntimeError):
     pass
 
 
+def describe_download_failure(error: Exception) -> str:
+    """Describe common YouTube refusal without exposing session details to visitors."""
+    message = str(error).casefold()
+    if "not a bot" in message or "confirm you're not a bot" in message:
+        return (
+            "YouTube ha bloqueado el acceso automático desde el servidor de VB Stats "
+            "y solicita verificar que no es un bot. No es un error del modelo RAVEL "
+            "ni significa que el partido sea privado. Esta grabación no puede "
+            "obtenerse actualmente desde Railway. Si dispones del archivo original "
+            "del partido, usa «Subir un vídeo»; no introduzcas contraseñas ni cookies "
+            "de YouTube en esta aplicación."
+        )
+    if "private video" in message or "private" in message and "video" in message:
+        return "El vídeo no es accesible públicamente desde el servidor. Utiliza una grabación que tengas autorización para procesar."
+    return (
+        "YouTube no ha permitido importar esta grabación desde el servidor. "
+        "Puede ser un problema de acceso o de disponibilidad del formato. "
+        "Si tienes el archivo original autorizado, utiliza «Subir un vídeo»."
+    )
+
+
 def video_id_from_url(url: str) -> str:
     if not isinstance(url, str) or len(url) > 800:
         raise ValueError('Pega un enlace de YouTube válido.')
@@ -122,7 +143,7 @@ def import_video(url: str, target_dir: Path, *, max_bytes: int, max_duration_sec
     except ImportCancelled:
         raise
     except DownloadError as exc:
-        raise RuntimeError('No se ha podido obtener el vídeo desde YouTube. Puede estar restringido, ser privado o haber cambiado el acceso. Actualiza yt-dlp o utiliza tu archivo original.') from exc
+        raise RuntimeError(describe_download_failure(exc)) from exc
     finally:
         if cancelled and cancelled():
             for candidate in target_dir.glob(f'{video_id}.*'):
