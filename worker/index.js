@@ -66,6 +66,18 @@ async function api(request, env, url) {
     if (upstream.status >= 300 && upstream.status < 400) {
       return error("El motor de análisis ha cambiado de dirección. Inténtalo más tarde.", 502);
     }
+    if (path === "/capabilities" && upstream.ok) {
+      const data = await upstream.json();
+      data.maxUploadMB = Math.min(Number(data.maxUploadMB) || 25, 25);
+      return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff"
+        }
+      });
+    }
     return new Response(upstream.body, {
       status: upstream.status,
       headers: {
