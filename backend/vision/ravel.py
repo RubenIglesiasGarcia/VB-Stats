@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from backend.vision.fast_clip import extract_with_ffmpeg
 
 MODEL_FILE = 'RAVEL-VB-013-9f.xml'
 UPSTREAM_URL = 'https://github.com/asigatchov/fast-volleyball-tracking-inference'
@@ -219,6 +220,9 @@ def convert_predictions(path: Path, *, fps: float, start_seconds: float, length_
 
 def _extract_interval(source:Path,target:Path,start_seconds:float,duration_seconds:float,
                       stopped:Callable[[],bool],progress:Callable[[float,int],None]|None) -> tuple[float,float]:
+    if os.getenv('VBSTATS_FFMPEG_SEGMENTS','1')=='1':
+        return extract_with_ffmpeg(source,target,start_seconds,duration_seconds,stopped,progress)
+    # Legacy fallback, opt-in for compatibility with installations without FFmpeg.
     import cv2
     cap=cv2.VideoCapture(str(source))
     if not cap.isOpened():raise ValueError('No se pudo abrir el vídeo.')
@@ -277,7 +281,10 @@ def process_ravel_video(file:Path, *, start_seconds:float, duration_seconds:floa
     with tempfile.TemporaryDirectory(prefix='vb-stats-ravel-') as tmp:
         temp=Path(tmp)
         clip=temp/'clip.mp4'
-        fps,clip_duration=_extract_interval(file,clip,start_seconds,duration_seconds,stopped,progress)
+        try:
+            fps,clip_duration=_extract_interval(file,clip,start_seconds,duration_seconds,stopped,progress)
+        except InterruptedError:
+            return {'cancelled':True,'proposals':[],'stats':{}}
         if stopped():return {'cancelled':True,'proposals':[],'stats':{}}
         output=temp/'predictions.jsonl'
         command=[sys.executable,str(base/'src'/'inference_player_ball_openvino.py'),str(clip),
