@@ -9,6 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 import re
+import shutil
+import subprocess
+from importlib.util import find_spec
 from typing import Callable
 from backend.vision.long_match import compact_video_format
 
@@ -103,6 +106,8 @@ def import_video(url: str, target_dir: Path, *, max_bytes: int, max_duration_sec
         'outtmpl': output_tpl,
         # Temporary selector used to obtain metadata before picking a disk-safe format.
         'format': 'bestvideo[height<=720]/best[height<=720]',
+        # yt-dlp does NOT automatically enable Node; version >=22 plus yt-dlp-ejs are required.
+        'js_runtimes': {'node': {}},
         'max_filesize': max_bytes,
         'socket_timeout': 25, 'retries': 2, 'fragment_retries': 2,
         'progress_hooks': [on_progress],
@@ -154,6 +159,18 @@ def import_video(url: str, target_dir: Path, *, max_bytes: int, max_duration_sec
 def availability() -> tuple[bool, str]:
     try:
         import yt_dlp
-        return True, f'yt-dlp {getattr(yt_dlp.version, "__version__", "instalado")}'
     except ImportError:
-        return False, 'yt-dlp no instalado; ejecuta REPARAR MOTOR IA.cmd.'
+        return False, 'yt-dlp no instalado.'
+    if find_spec('yt_dlp_ejs') is None:
+        return False, 'Falta yt-dlp-ejs para procesar los desafíos de YouTube.'
+    node = shutil.which('node')
+    if not node:
+        return False, 'No está instalado Node.js 22 o superior para el motor YouTube.'
+    try:
+        completed = subprocess.run([node, '--version'], capture_output=True, text=True, timeout=5, check=True)
+        major = int(completed.stdout.strip().lstrip('v').split('.')[0])
+        if major < 22:
+            return False, f'Node.js {major} es demasiado antiguo; hace falta Node.js 22 o superior.'
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False, 'No se ha podido verificar la versión de Node.js.'
+    return True, f'yt-dlp {getattr(yt_dlp.version, "__version__", "instalado")} · Node.js {major} · EJS disponible'
