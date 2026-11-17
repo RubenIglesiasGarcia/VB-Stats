@@ -24,7 +24,7 @@ Devuelve EXCLUSIVAMENTE JSON válido sin markdown:
   "moments": [
     {"second": número absoluto de segundo del vídeo,
      "action": "saque|recepción|colocación|ataque|bloqueo|defensa|toque",
-     "team": "A" o "B" o null,
+     "team": "A" o "B" o "",
      "jersey": "número de dorsal" o ""}
   ],
   "rallies": [{"start_seconds": número, "end_seconds": número}]
@@ -38,6 +38,28 @@ Reglas críticas:
 - Un rally es estimado: debe estar visiblemente delimitado, sin suponer un ganador.
 - Esta observación por IA NO reemplaza un scouting de voleibol acción a acción.
 """
+
+RESPONSE_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'duration_seconds': {'type': 'number'},
+        'moments': {'type': 'array', 'items': {
+            'type': 'object', 'properties': {
+                'second': {'type': 'number'},
+                'action': {'type': 'string'},
+                'team': {'type': 'string'},
+                'jersey': {'type': 'string'}
+            }, 'required': ['second', 'action', 'team', 'jersey']
+        }},
+        'rallies': {'type': 'array', 'items': {
+            'type': 'object', 'properties': {
+                'start_seconds': {'type': 'number'},
+                'end_seconds': {'type': 'number'}
+            }, 'required': ['start_seconds', 'end_seconds']
+        }}
+    },
+    'required': ['duration_seconds', 'moments', 'rallies']
+}
 
 def available() -> tuple[bool, str]:
     if os.getenv('VBSTATS_GEMINI_ENABLE') != '1':
@@ -160,6 +182,8 @@ def analyze(url: str, *, max_seconds: float = 10800) -> dict:
                 {'type': 'text', 'text': PROMPT},
                 {'type': 'video', 'uri': canonical, 'resolution': 'low'},
             ],
+            response_format={'type': 'text', 'mime_type': 'application/json',
+                             'schema': RESPONSE_SCHEMA},
         )
         payload = _json_document(getattr(interaction, 'output_text', '') or '')
         return tentative_draft(payload, canonical, max_seconds)
