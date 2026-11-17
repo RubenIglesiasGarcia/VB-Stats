@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 import re
 from typing import Callable
+from backend.vision.long_match import compact_video_format
 
 ID_RE = re.compile(r'^[A-Za-z0-9_-]{11}$')
 HOSTS = {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be', 'www.youtu.be'}
@@ -79,8 +80,8 @@ def import_video(url: str, target_dir: Path, *, max_bytes: int, max_duration_sec
     opts = {
         'noplaylist': True, 'ignoreerrors': False, 'quiet': True, 'no_warnings': True,
         'outtmpl': output_tpl,
-        # A video-only 1080p stream preserves small jersey digits; no ffmpeg merge.
-        'format': 'bestvideo[ext=mp4][height<=1080][vcodec^=avc1]/bestvideo[ext=mp4][height<=1080]/best[ext=mp4][height<=1080]/bestvideo[ext=webm][height<=1080]/best[ext=webm][height<=1080]',
+        # Temporary selector used to obtain metadata before picking a disk-safe format.
+        'format': 'bestvideo[height<=720]/best[height<=720]',
         'max_filesize': max_bytes,
         'socket_timeout': 25, 'retries': 2, 'fragment_retries': 2,
         'progress_hooks': [on_progress],
@@ -97,10 +98,9 @@ def import_video(url: str, target_dir: Path, *, max_bytes: int, max_duration_sec
             raise ValueError('Espera a que finalice la emisión en directo.')
         duration = metadata.get('duration')
         if not isinstance(duration, (int, float)) or not 5 <= duration <= max_duration_seconds:
-            raise ValueError('El vídeo no tiene una duración válida o supera el límite de seis horas.')
-        estimated = metadata.get('filesize') or metadata.get('filesize_approx') or 0
-        if estimated and estimated > max_bytes:
-            raise ValueError('El vídeo supera el tamaño máximo de importación.')
+            raise ValueError(f'El vídeo no tiene duración válida o supera el máximo de {max_duration_seconds//60} minutos.')
+        selected_format,selected_height,estimated = compact_video_format(metadata,float(duration),max_bytes)
+        opts['format']=selected_format
         if cancelled and cancelled():
             raise ImportCancelled('Importación cancelada.')
         with YoutubeDL(opts) as downloader:
@@ -117,7 +117,8 @@ def import_video(url: str, target_dir: Path, *, max_bytes: int, max_duration_sec
         if progress:
             progress(1.0)
         return {'path': path, 'name': (metadata.get('title') or 'Partido de YouTube')[:160],
-                'videoId': video_id, 'durationSeconds': float(duration)}
+                'videoId': video_id, 'durationSeconds': float(duration),
+                'formatHeight': selected_height, 'estimatedBytes': estimated}
     except ImportCancelled:
         raise
     except DownloadError as exc:
