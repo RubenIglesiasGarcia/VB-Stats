@@ -8,7 +8,7 @@ def test_youtube_datacenter_bot_challenge_is_identified():
     )
     assert "bloqueado" in text
     assert "Railway" in text
-    assert "archivo original" in text
+    assert "YouTube directo con Gemini" in text
     assert "privado" in text  # Explicitly says this does NOT imply private content.
 
 
