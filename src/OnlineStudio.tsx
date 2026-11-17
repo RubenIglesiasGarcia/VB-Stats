@@ -59,7 +59,7 @@ export function OnlineStudio(){
  }
  async function resume(){if(!jobId)return;setBusy(true);setError('');try{
   await api(`/api/analysis/jobs/${jobId}/resume`,{method:'POST'});
-  setJob(j=>j?{...j,status:'queued',error:undefined,stage:'Reanudando desde el último tramo guardado'}:j);
+  setJob(j=>j?{...j,status:'queued' as const,error:undefined,stage:'Reanudando desde el último tramo guardado'}:j);
  }catch(e){setError(e instanceof Error?e.message:'No se pudo reanudar el análisis');}finally{setBusy(false)}}
  function updateReport(data:AutoAnalysis){setReport(data);saveReport(data)}
  function updateReview(id:string,review:Reviews[string]|null){const next={...reviews};if(review)next[id]=review;else delete next[id];setReviews(next);if(report)try{localStorage.setItem(keyFor(report),JSON.stringify(next));}catch{}}
