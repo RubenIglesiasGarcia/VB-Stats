@@ -103,7 +103,7 @@ export function sanitizeAuto(value:unknown):AutoAnalysis|undefined{
       winner:r.winner==='A'||r.winner==='B'?r.winner:null,status:r.status==='corrected'?'corrected':'estimated'});
   }
   return {version:1,sourceName:typeof v.sourceName==='string'?v.sourceName.slice(0,160):'Partido',
-    engine:'ravel-vb-013',durationSeconds:typeof v.durationSeconds==='number'&&Number.isFinite(v.durationSeconds)?v.durationSeconds:0,
+    engine:v.engine==='gemini-youtube-preview'?'gemini-youtube-preview':'ravel-vb-013',durationSeconds:typeof v.durationSeconds==='number'&&Number.isFinite(v.durationSeconds)?v.durationSeconds:0,
     processedSeconds:typeof v.processedSeconds==='number'&&Number.isFinite(v.processedSeconds)?v.processedSeconds:0,
     segments:typeof v.segments==='number'?v.segments:0,events,rallies,
     jerseyRecognition: v.jerseyRecognition&&typeof v.jerseyRecognition==='object' ? (()=>{
