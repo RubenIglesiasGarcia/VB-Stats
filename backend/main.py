@@ -23,8 +23,9 @@ from backend.vision.auto_match import make_draft, jersey_team_votes, preview_sta
 from backend.vision.youtube_import import video_id_from_url, import_video, ImportCancelled, availability as youtube_availability
 from backend.vision.jersey_ocr import identify_track_numbers, available as ocr_availability
 from backend.vision.long_match import download_budget
+from backend.vision.gemini_youtube import available as gemini_youtube_available, analyze as analyze_gemini_youtube
 
-VERSION='0.9.1'
+VERSION='0.9.2'
 PUBLIC_MODE=os.getenv('VBSTATS_PUBLIC_MODE','0')=='1'
 ACCESS_TOKEN=os.getenv('VBSTATS_ACCESS_TOKEN','')
 if PUBLIC_MODE and len(ACCESS_TOKEN)<24:
@@ -229,10 +230,14 @@ def capabilities():
     yolo_ready,yolo_reason=available()
     ravel_ready,ravel_reason=ravel_readiness()
     youtube_ready,youtube_reason=youtube_availability()
+    gemini_ready,gemini_reason=gemini_youtube_available()
     ocr_ready,ocr_reason=ocr_availability()
     return {'manual_annotation':True,'youtube_embed':True,'export_json_csv':True,
         'auto_point_segmentation':False,'whole_match_draft':ravel_ready,'player_tracking':ravel_ready or yolo_ready,
-        'ball_tracking':ravel_ready or yolo_ready,'jersey_recognition':ocr_ready,'youtube_import':youtube_ready,'youtube_import_note':youtube_reason,
+        'ball_tracking':ravel_ready or yolo_ready,'jersey_recognition':ocr_ready,
+        'youtube_import':gemini_ready or (youtube_ready and ravel_ready),
+        'youtube_engine':'gemini' if gemini_ready else 'ravel' if youtube_ready and ravel_ready else 'unavailable',
+        'gemini_youtube_note':gemini_reason,'youtube_import_note':gemini_reason if gemini_ready else youtube_reason,
         'jersey_ocr_note':ocr_reason,
         'touch_classification':ravel_ready,'contact_suggestions':ravel_ready or yolo_ready,
         'court_region_calibration':True,'ball_temporal_filtering':True,'coverage_timeline':True,
@@ -382,28 +387,59 @@ def _run_youtube_auto_job(jid: str, uid: str, options: StartYouTubeJob) -> None:
         shutil.rmtree(folder,ignore_errors=True)
 
 
+def _run_gemini_youtube_job(jid: str, url: str) -> None:
+    """Direct YouTube observation with no Railway media download."""
+    def mutate(**items):
+        with lock:
+            if jid in jobs: jobs[jid].update(items)
+        if 'status' in items:
+            snapshot_job(jid)
+    try:
+        mutate(status='running', phase='analysis', progress=5,
+               stage='Gemini está examinando el vídeo público de YouTube (sin descargarlo)')
+        draft=analyze_gemini_youtube(url,max_seconds=MAX_AUTO_SECONDS)
+        if stop_flags[jid].is_set():
+            mutate(status='cancelled',phase='cancelled',error='Análisis cancelado.')
+            return
+        mutate(status='completed',phase='completed',progress=100,
+               stage='Observaciones provisionales de Gemini disponibles',
+               processedSegments=1,totalSegments=1,autoAnalysis=draft,
+               stats={'engine':'gemini-youtube-preview','rallyCandidateCount':len(draft['rallies']),
+                      'contactCandidates':len(draft['events']),'durationSeconds':draft['durationSeconds']})
+    except Exception as exc:
+        mutate(status='failed',phase='failed',error=f'{type(exc).__name__}: {str(exc)[:400]}')
+
+
 @app.post('/api/analysis/youtube-jobs',status_code=202)
 def start_youtube_analysis(opts:StartYouTubeJob):
     prune()
-    ready,reason=youtube_availability()
-    if not ready:raise HTTPException(503,reason)
-    ready,reason=ravel_readiness()
-    if not ready:raise HTTPException(503,reason)
+    gemini_ready,_=gemini_youtube_available()
+    if not gemini_ready:
+        ready,reason=youtube_availability()
+        if not ready:raise HTTPException(503,reason)
+        ready,reason=ravel_readiness()
+        if not ready:raise HTTPException(503,reason)
     with lock:
         running=sum(1 for j in jobs.values() if j['status'] in ('queued','running'))
         if running>=MAX_QUEUED:raise HTTPException(429,'La cola de análisis está llena.')
-        if len(uploads)>=MAX_STORED or sum(i['size'] for i in uploads.values())>MAX_TOTAL_DISK-64*1024*1024:
+        if not gemini_ready and (len(uploads)>=MAX_STORED or sum(i['size'] for i in uploads.values())>MAX_TOTAL_DISK-64*1024*1024):
             raise HTTPException(507,'Almacenamiento temporal lleno.')
         jid=str(uuid4());uid=str(uuid4())
-        jobs[jid]={'jobId':jid,'uploadId':uid,'status':'queued','phase':'downloading',
-                   'progress':0,'downloadProgress':0,'created':time.time(),'engine':'ravel',
+        jobs[jid]={'jobId':jid,'uploadId':uid,'status':'queued',
+                   'phase':'analysis' if gemini_ready else 'downloading',
+                   'progress':0,'downloadProgress':0,'created':time.time(),
+                   'engine':'gemini-youtube-preview' if gemini_ready else 'ravel',
                    'error':None,'proposals':[],'autoAnalysis':None,'processedSegments':0,
-                   'totalSegments':0,'stage':'Preparando descarga autorizada',
+                   'totalSegments':0,
+                   'stage':'Preparando análisis directo de YouTube' if gemini_ready else 'Preparando descarga autorizada',
                    '_chunks':[],'_raw_events':[],'_ocr_samples':[],'_options':None}
         stop_flags[jid]=Event()
     snapshot_job(jid)
-    pool.submit(_run_youtube_auto_job,jid,uid,opts)
-    return {'jobId':jid,'status':'queued','message':'Importación y análisis local iniciados.'}
+    if gemini_ready:
+        pool.submit(_run_gemini_youtube_job,jid,opts.url)
+    else:
+        pool.submit(_run_youtube_auto_job,jid,uid,opts)
+    return {'jobId':jid,'status':'queued','message':'Análisis del enlace público iniciado.'}
 
 
 @app.post('/api/analysis/jobs/{job_id}/resume',status_code=202)
