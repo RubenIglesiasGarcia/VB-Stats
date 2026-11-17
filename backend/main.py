@@ -261,7 +261,7 @@ async def upload_video(file:UploadFile=File(...)):
             raise HTTPException(429,'La cola está llena. Espera a que finalice otro análisis.')
     UPLOADS.mkdir(parents=True,exist_ok=True)
     with lock:
-        if len(uploads)>=MAX_STORED or sum(item['size'] for item in uploads.values())>MAX_TOTAL_DISK-MAX_UPLOAD:
+        if len(uploads)>=MAX_STORED or sum(item['size'] for item in uploads.values())>MAX_TOTAL_DISK-64*1024*1024:
             raise HTTPException(507,'Almacenamiento temporal lleno. Borra vídeos anteriores o espera a su caducidad.')
     uid=str(uuid4());path=UPLOADS/(uid+ext)
     size=0
@@ -392,7 +392,7 @@ def start_youtube_analysis(opts:StartYouTubeJob):
     with lock:
         running=sum(1 for j in jobs.values() if j['status'] in ('queued','running'))
         if running>=MAX_QUEUED:raise HTTPException(429,'La cola de análisis está llena.')
-        if len(uploads)>=MAX_STORED or sum(i['size'] for i in uploads.values())>MAX_TOTAL_DISK-MAX_UPLOAD:
+        if len(uploads)>=MAX_STORED or sum(i['size'] for i in uploads.values())>MAX_TOTAL_DISK-64*1024*1024:
             raise HTTPException(507,'Almacenamiento temporal lleno.')
         jid=str(uuid4());uid=str(uuid4())
         jobs[jid]={'jobId':jid,'uploadId':uid,'status':'queued','phase':'downloading',
