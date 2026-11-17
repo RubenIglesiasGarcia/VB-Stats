@@ -30,9 +30,10 @@ def describe_download_failure(error: Exception) -> str:
             "YouTube ha bloqueado el acceso automático desde el servidor de VB Stats "
             "y solicita verificar que no es un bot. No es un error del modelo RAVEL "
             "ni significa que el partido sea privado. Esta grabación no puede "
-            "obtenerse actualmente desde Railway. Si dispones del archivo original "
-            "del partido, usa «Subir un vídeo»; no introduzcas contraseñas ni cookies "
-            "de YouTube en esta aplicación."
+            "obtenerse por yt-dlp desde Railway. Para seguir usando el enlace "
+            "sin subir archivos, el propietario puede activar el motor de "
+            "YouTube directo con Gemini en Railway. No se necesitan claves "
+            "ni cuentas de cada visitante."
         )
     if "private video" in message or "private" in message and "video" in message:
         return "El vídeo no es accesible públicamente desde el servidor. Utiliza una grabación que tengas autorización para procesar."
