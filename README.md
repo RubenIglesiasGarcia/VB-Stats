@@ -1,4 +1,8 @@
-> **VB Stats 0.9.2:** nueva ruta para analizar **YouTube directamente con Gemini** (sin descargarlo en Railway), manteniendo yt-dlp/RAVEL como alternativa. **Un único secreto del propietario**, nunca claves por visitante. Ver [configuración YouTube directo](docs/YOUTUBE-DIRECTO-GEMINI.md). Los informes automáticos de Gemini son observaciones provisionales y requieren revisión; falta prueba real del partido completo.\n\n**Nuevo en 0.9:** base de IA online privada y estadísticas técnicas por entrenador. Lee [docs/ONLINE-AI.md](docs/ONLINE-AI.md) para los pasos de despliegue y sus limitaciones. En Cloudflare se mantiene la demo hasta validar el backend.
+# VB Stats
+
+> **VB Stats 0.9.2:** nueva ruta para analizar **YouTube directamente con Gemini** (sin descargarlo en Railway), manteniendo yt-dlp/RAVEL como alternativa. **Un único secreto del propietario**, nunca claves por visitante. Ver [configuración YouTube directo](docs/YOUTUBE-DIRECTO-GEMINI.md). Los informes automáticos de Gemini son observaciones provisionales y requieren revisión; falta prueba real del partido completo.
+
+**Nuevo en 0.9:** base de IA online privada y estadísticas técnicas por entrenador. Lee [docs/ONLINE-AI.md](docs/ONLINE-AI.md) para los pasos de despliegue y sus limitaciones. En Cloudflare se mantiene la demo hasta validar el backend.
 
 # VB Stats 0.8.1 — análisis automático desde YouTube y OCR de dorsales
 
