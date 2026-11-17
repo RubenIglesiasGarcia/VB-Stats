@@ -1,9 +1,13 @@
 # Hosted private-beta analysis service. Cloudflare Pages builds React separately.
-FROM python:3.12-slim
+# yt-dlp needs a current JS runtime to solve YouTube's official player challenges.
+# Copy Node 22 from the official image so the Debian apt repo cannot install an old version.
+FROM node:22-bookworm-slim AS js_runtime
+FROM python:3.12-slim-bookworm
+COPY --from=js_runtime /usr/local/bin/node /usr/local/bin/node
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl ffmpeg libglib2.0-0 libgl1 nodejs \
+    ca-certificates curl ffmpeg libglib2.0-0 libgl1 \
     && rm -rf /var/lib/apt/lists/*
 COPY backend/requirements.txt backend/requirements-ravel.txt backend/requirements-jersey.txt backend/requirements-youtube.txt /app/backend/
 RUN python -m pip install --upgrade pip && \
@@ -23,7 +27,8 @@ ENV PYTHONPATH=/app \
     VBSTATS_DATA_DIR=/app/analysis-data \
     VBSTATS_MAX_UPLOAD_MB=384 \
     VBSTATS_MAX_VIDEO_SECONDS=7200
-RUN mkdir -p /app/analysis-data && python -m compileall -q /app/backend
+RUN node --version && python -c "import yt_dlp, yt_dlp_ejs; print('yt-dlp EJS available')" && \
+    mkdir -p /app/analysis-data && python -m compileall -q /app/backend
 EXPOSE 8000
 # Railway provides PORT and HTTPS ingress. One worker keeps the in-memory queue coherent.
 CMD ["sh","-c","exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
