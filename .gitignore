@@ -4,6 +4,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.production
 .venv/
 __pycache__/
 *.py[cod]
@@ -16,8 +17,10 @@ __pycache__/
 *.avi
 *.srt
 *.vtt
-external/
-models/
 *.pt
 *.onnx
 *.bin
+*.exe
+*.zip
+external/
+models/

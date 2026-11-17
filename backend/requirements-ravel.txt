@@ -1,0 +1,8 @@
+-r requirements.txt
+# Runtime-only dependencies for the external RAVEL-VB 0.2.0 OpenVINO CLI.
+# No CUDA or YOLO/PyTorch download required for this engine.
+opencv-python-headless>=4.9,<5
+openvino>=2025.2,<2027
+numpy>=1.26,<3
+scipy>=1.11,<2
+tqdm>=4.65,<5

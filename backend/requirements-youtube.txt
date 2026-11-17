@@ -1,0 +1,3 @@
+# yt-dlp uses YouTube's public website; no API key, login or cookies.
+# Current YouTube extraction may require yt-dlp-ejs and Node.js; app uses Node 20+.
+yt-dlp[default]>=2026.10

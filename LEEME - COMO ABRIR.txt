@@ -1,0 +1,20 @@
+VB STATS 0.8.1 - FLUJO SIMPLIFICADO
+
+1) Descomprime TODO el ZIP en una carpeta nueva.
+2) Cierra las ventanas del motor y la interfaz de versiones anteriores.
+3) Ejecuta VB-Stats.exe (alternativa: INICIAR VB STATS.cmd).
+4) En Analizar partido completo, elige YouTube y pega el enlace, o selecciona un MP4.
+5) Si usas YouTube, confirma que tienes permiso para analizar esa grabacion.
+6) Pulsa Analizar partido completo. NO necesitas escribir dorsales.
+7) Cuando finalice, consulta el informe. El Excel/CSV solo aparece con datos disponibles.
+
+La IA identifica los dorsales cuando hay suficiente evidencia. Los numeros dudosos
+quedan sin identificar; el motor no calcula aun marcadores ni estadisticas de
+puntos fiables a partir de contactos probables.
+
+Si no se conecta la API: ejecuta REPARAR MOTOR IA.cmd.
+Requisitos: Node.js 20+, Python compatible, Internet para primera instalacion.
+Las primeras descargas de modelos y dependencias pueden tardar.
+
+Este ZIP es una actualizacion del proyecto existente; incluye el lanzador EXE,
+pero no pesos de RAVEL. Se descargan en tu equipo cuando corresponda.
