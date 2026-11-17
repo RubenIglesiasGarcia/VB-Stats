@@ -38,6 +38,7 @@ $railway = Join-Path ((npm.cmd prefix -g).Trim()) "railway.cmd"
 - El informe Gemini contiene **momentos candidatos**, no todos los puntos. Los nombres de equipo y los dorsales pueden ser erróneos. **Nunca adjudica ganadores ni genera errores, kills, aces o porcentajes como hechos confirmados**.
 - La web distingue el motor `gemini-youtube-preview` del motor `ravel-vb-013`, y los resultados deportivos se calculan solamente de acciones revisadas manualmente.
 - La clave del propietario puede conllevar **coste de procesamiento**. Probar primero **un partido**, vigilar el panel de Google AI Studio y definir cuotas. Las peticiones pasan por Cloudflare y su límite de uso, pero eso no equivale a un presupuesto monetario estricto.
+- VB Stats limita por defecto los trabajos Gemini a **2 análisis al día** en el volumen persistente de Railway. Se puede ajustar con `VBSTATS_GEMINI_DAILY_LIMIT`, pero no es un tope monetario: configura también presupuestos y alertas en Google.
 - Este enfoque **no garantiza** que el vídeo particular `ul-pA6pLWX8` esté disponible mediante la API de Gemini; es necesaria una prueba real con `GEMINI_API_KEY` configurada.
 
 ## Fuentes oficiales
