@@ -1,3 +1,5 @@
+**Nuevo en 0.9:** base de IA online privada y estadísticas técnicas por entrenador. Lee [docs/ONLINE-AI.md](docs/ONLINE-AI.md) para los pasos de despliegue y sus limitaciones. En Cloudflare se mantiene la demo hasta validar el backend.
+
 # VB Stats 0.8.1 — análisis automático desde YouTube y OCR de dorsales
 
 VB Stats es una herramienta local para analizar vídeo de voleibol. Ahora puedes pegar una URL de YouTube **sin descargar ni subir manualmente otro archivo**. El backend utiliza `yt-dlp` para obtener una copia temporal **en tu ordenador**, ejecuta RAVEL-VB-013 para proponer contactos y rallies, y utiliza OCR para sugerir números de camiseta cuando hay suficientes fotogramas legibles. Todo el proceso puede tardar; el estado se muestra por fases.

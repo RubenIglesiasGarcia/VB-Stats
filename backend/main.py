@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 from uuid import uuid4
 import os
+import secrets
 import shutil
 import time
 from typing import Literal
@@ -22,16 +23,20 @@ from backend.vision.auto_match import make_draft, jersey_team_votes, preview_sta
 from backend.vision.youtube_import import video_id_from_url, import_video, ImportCancelled, availability as youtube_availability
 from backend.vision.jersey_ocr import identify_track_numbers, available as ocr_availability
 
-VERSION='0.8.1'
+VERSION='0.9.0'
+PUBLIC_MODE=os.getenv('VBSTATS_PUBLIC_MODE','0')=='1'
+ACCESS_TOKEN=os.getenv('VBSTATS_ACCESS_TOKEN','')
+if PUBLIC_MODE and len(ACCESS_TOKEN)<24:
+    raise RuntimeError('El servidor publico exige VBSTATS_ACCESS_TOKEN de al menos 24 caracteres.')
 DATA_DIR=Path(os.getenv('VBSTATS_DATA_DIR',str(Path.home()/'.vb-stats-analysis'))).resolve()
 UPLOADS=DATA_DIR/'uploads'
 INCOMING=DATA_DIR/'incoming'
-MAX_UPLOAD=int(os.getenv('VBSTATS_MAX_UPLOAD_MB','3072'))*1024*1024
+MAX_UPLOAD=int(os.getenv('VBSTATS_MAX_UPLOAD_MB','384' if PUBLIC_MODE else '3072'))*1024*1024
 MAX_DURATION=900
-MAX_QUEUED=2
-MAX_STORED=5
-MAX_TOTAL_DISK=12*1024*1024*1024
-MAX_AUTO_SECONDS=6*3600
+MAX_QUEUED=1 if PUBLIC_MODE else 2
+MAX_STORED=2 if PUBLIC_MODE else 5
+MAX_TOTAL_DISK=(3 if PUBLIC_MODE else 12)*1024*1024*1024
+MAX_AUTO_SECONDS=int(os.getenv('VBSTATS_MAX_VIDEO_SECONDS','7200' if PUBLIC_MODE else str(6*3600)))
 TTL=24*3600
 pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='vb-stats-vision')
 lock=Lock()
@@ -39,10 +44,64 @@ uploads:dict[str,dict]={}
 jobs:dict[str,dict]={}
 stop_flags:dict[str,Event]={}
 
-app=FastAPI(title='VB Stats Video Analysis',version=VERSION)
+
+# Small single-worker beta checkpoint store. Mount VBSTATS_DATA_DIR to a Railway
+# volume to survive restarts. Completed events, OCR samples and chunk cursor are
+# persisted; active processes are NOT resumed until the user requests it.
+STATE_DIR=DATA_DIR/'job-state'
+
+def snapshot_job(jid:str)->None:
+    with lock:
+        job=jobs.get(jid)
+        if not job:return
+        snap={'job':dict(job),'upload':uploads.get(job['uploadId'])}
+    try:
+        STATE_DIR.mkdir(parents=True,exist_ok=True)
+        target=STATE_DIR/(jid+'.json')
+        temporary=STATE_DIR/(jid+'.'+uuid4().hex+'.tmp')
+        temporary.write_text(__import__('json').dumps(snap,default=str,ensure_ascii=False),encoding='utf-8')
+        temporary.replace(target)
+    except OSError:
+        # An in-memory job can still finish when storage is temporarily unavailable.
+        pass
+
+def restore_jobs()->None:
+    if not STATE_DIR.exists():return
+    for path in STATE_DIR.glob('*.json'):
+        try:
+            if time.time()-path.stat().st_mtime>TTL:
+                path.unlink(missing_ok=True);continue
+            snap=__import__('json').loads(path.read_text(encoding='utf-8'))
+            item=snap['job'];jid=item['jobId'];uid=item['uploadId']
+            if jid!=path.stem or not isinstance(uid,str) or not isinstance(jid,str):continue
+            if item.get('status') in ('running','queued'):
+                item['status']='failed';item['error']='Servidor reiniciado. Puedes reanudar desde el último tramo guardado si el vídeo está disponible.'
+            up=snap.get('upload')
+            if up and isinstance(up.get('path'),str):
+                recorded=Path(up['path']).resolve()
+                if recorded.parent==UPLOADS.resolve() and recorded.is_file():uploads[uid]=up
+            if uid not in uploads and item.get('status')!='completed':
+                item['status']='failed';item['error']='El archivo temporal no está disponible para reanudar.'
+            jobs[jid]=item;stop_flags[jid]=Event()
+        except (OSError,ValueError,KeyError,TypeError):continue
+
+app=FastAPI(title='VB Stats Video Analysis',version=VERSION,
+    docs_url=None if PUBLIC_MODE else '/docs',openapi_url=None if PUBLIC_MODE else '/openapi.json')
 origins=[s.strip() for s in os.getenv('VBSTATS_ALLOWED_ORIGINS','http://localhost:5173,http://127.0.0.1:5173').split(',') if s.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=origins,allow_credentials=False,
-                   allow_methods=['GET','POST','DELETE'],allow_headers=['Content-Type'])
+                   allow_methods=['GET','POST','DELETE'],allow_headers=['Content-Type','X-VB-Stats-Key'])
+
+
+@app.middleware('http')
+async def beta_access(request, call_next):
+    # Cloudflare is public but processing is a private beta. Never bundle this token
+    # in Vite or in client source. The user enters it for the current browser session.
+    if PUBLIC_MODE and request.url.path not in ('/health',) and request.method!='OPTIONS':
+        supplied=request.headers.get('X-VB-Stats-Key','')
+        if not secrets.compare_digest(supplied,ACCESS_TOKEN):
+            from starlette.responses import JSONResponse
+            return JSONResponse(status_code=401,content={'detail':'Acceso privado. Introduce tu clave de VB Stats.'})
+    return await call_next(request)
 
 
 def prune() -> None:
@@ -71,6 +130,7 @@ def prune() -> None:
 
 @asynccontextmanager
 async def lifespan(_):
+    restore_jobs()
     stop=Event()
     def janitor():
         while not stop.is_set():
@@ -183,7 +243,7 @@ def capabilities():
           'yolo':{'ready':yolo_ready,'name':'YOLO genérico · legado','note':yolo_reason,
                   'detects':['personas','balón COCO','cambios de trayectoria']}
         },
-        'maxUploadMB':MAX_UPLOAD//(1024*1024),'maxSegmentSeconds':MAX_DURATION,'maxAutoDurationSeconds':MAX_AUTO_SECONDS,
+        'maxUploadMB':MAX_UPLOAD//(1024*1024),'maxSegmentSeconds':MAX_DURATION,'maxAutoDurationSeconds':MAX_AUTO_SECONDS,'onlineBeta':PUBLIC_MODE,
         'supported_inputs':['mp4','mov','webm','youtube_https_url'],
         'notes':'RAVEL detecta contactos; RapidOCR propone dorsales solo con >=3 lecturas consistentes. Puntos y resultados no certificados.'}
 
@@ -266,7 +326,7 @@ def start_analysis(opts:StartJob):
     with lock:
         if opts.uploadId not in uploads:raise HTTPException(404,'Vídeo no encontrado o caducado. Vuelve a cargarlo.')
         running=sum(1 for j in jobs.values() if j['status'] in ('queued','running'))
-        if running>=MAX_QUEUED:raise HTTPException(429,'La cola de análisis está llena (máximo 2).')
+        if running>=MAX_QUEUED:raise HTTPException(429,'La cola de análisis está llena. Ya hay un análisis en curso.')
         uid=str(uuid4())
         jobs[uid]={'jobId':uid,'uploadId':opts.uploadId,'status':'queued','progress':0,'frames':0,
                    'created':time.time(),'proposals':[],'stats':None,'error':None,'engine':opts.engine}
@@ -300,6 +360,7 @@ def _run_youtube_auto_job(jid: str, uid: str, options: StartYouTubeJob) -> None:
                           teamAColor=options.teamAColor,teamBColor=options.teamBColor,
                           rosterA=options.rosterA,rosterB=options.rosterB)
         mutate(_options=opts.model_dump())
+        snapshot_job(jid)
         _run_auto_job(jid,uid,opts)
     except ImportCancelled:
         mutate(status='cancelled',error='Importación cancelada.',phase='cancelled')
@@ -331,6 +392,7 @@ def start_youtube_analysis(opts:StartYouTubeJob):
                    'totalSegments':0,'stage':'Preparando descarga autorizada',
                    '_chunks':[],'_raw_events':[],'_ocr_samples':[],'_options':None}
         stop_flags[jid]=Event()
+    snapshot_job(jid)
     pool.submit(_run_youtube_auto_job,jid,uid,opts)
     return {'jobId':jid,'status':'queued','message':'Importación y análisis local iniciados.'}
 
@@ -411,6 +473,8 @@ def _run_auto_job(jid:str,uid:str,opts:StartAutoJob) -> None:
     def mutate(**items):
         with lock:
             if jid in jobs: jobs[jid].update(items)
+        if any(k in items for k in ('_chunks','status')):
+            snapshot_job(jid)
     with lock:
         job=jobs.get(jid)
         if not job:return
@@ -425,7 +489,7 @@ def _run_auto_job(jid:str,uid:str,opts:StartAutoJob) -> None:
     try:
         duration=_video_metadata(video)['durationSeconds']
         if duration>MAX_AUTO_SECONDS:
-            raise ValueError('El vídeo supera las 6 horas admitidas por el analizador completo.')
+            raise ValueError(f'El vídeo supera el máximo de {MAX_AUTO_SECONDS//60} minutos de esta instalación.')
         with lock:
             old_chunks=jobs.get(jid,{}).get('_chunks',[])
             old_events=jobs.get(jid,{}).get('_raw_events',[])
@@ -501,6 +565,7 @@ def start_auto_analysis(opts:StartAutoJob):
                    'autoAnalysis':None,'processedSegments':0,'totalSegments':0,'stage':'Preparando vídeo',
             '_chunks':[],'_raw_events':[],'_ocr_samples':[],'_options':opts.model_dump()}
         stop_flags[jid]=Event()
+    snapshot_job(jid)
     pool.submit(_run_auto_job,jid,opts.uploadId,opts)
     return {'jobId':jid,'status':'queued','message':'Análisis completo iniciado. Solo se generarán estadísticas provisionales, sin ganadores inventados.'}
 

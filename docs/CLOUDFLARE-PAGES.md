@@ -31,3 +31,8 @@ Con `npm run dev` se carga `.env.example` si la copias a `.env` (o, si no, se us
 - Si intenta comunicarse con `127.0.0.1`, comprueba que `.env.production` forma parte del repositorio y que no se ha configurado `VITE_WEB_PREVIEW=0` como variable de Cloudflare, que tiene precedencia.
 - Si la conexión de GitHub no lista el repositorio, revisa los permisos de la app de Cloudflare en GitHub: Settings → Applications → Installed GitHub Apps.
 - Los modelos (`*.onnx`, `*.bin`, `*.pt`) y vídeos no se suben a GitHub. No son necesarios para esta demo.
+
+
+## Evolucion 0.9 (beta privada)
+
+Existe una nueva interfaz real en `src/OnlineStudio.tsx` y backend en el Dockerfile del repositorio. **No actives** `VITE_ONLINE_STUDIO=1` hasta tener el servicio Railway desplegado con un dominio HTTPS, autenticacion privada y endpoint `/capabilities` comprobado. Lee [ONLINE-AI.md](ONLINE-AI.md).
