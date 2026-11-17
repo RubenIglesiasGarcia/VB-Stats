@@ -5,7 +5,7 @@ import {computePerformance,hittingEfficiency,percent,performanceCSV,receptionRat
 import {formatTime} from './model';
 import './online.css';
 const BASE=(import.meta.env.VITE_ANALYSIS_API||'').replace(/\/$/,'');
-const TOKEN_KEY='vbstats-beta-key';const REPORT_KEY='vbstats-online-last-report';const JOB_KEY='vbstats-online-job';
+const REPORT_KEY='vbstats-online-last-report';const JOB_KEY='vbstats-online-job';
 type Job={jobId:string;status:'queued'|'running'|'completed'|'failed'|'cancelled';progress:number;phase?:string;stage?:string;error?:string;processedSegments?:number;totalSegments?:number;autoAnalysis?:AutoAnalysis;downloadProgress?:number};
 type Caps={engines?:{ravel?:{ready:boolean;note:string}};youtube_import?:boolean;jersey_recognition?:boolean;maxUploadMB?:number;maxAutoDurationSeconds?:number;};
 const allSkills=['saque','recepción','ataque','bloqueo','defensa','colocación'] as const;
@@ -17,8 +17,6 @@ function download(name:string,contents:string){const url=URL.createObjectURL(new
 function value(n:number|null,unit=''){return n===null?'—':`${n}${unit}`}
 function Stat({label,note,value:content,tone}:{label:string;note?:string;value:string|number;tone?:string}){return <div className={'os-stat '+(tone??'')}><span>{label}</span><strong>{content}</strong>{note&&<small>{note}</small>}</div>}
 export function OnlineStudio(){
- const [key,setKey]=useState(()=>sessionStorage.getItem(TOKEN_KEY)||'');
- const [password,setPassword]=useState(()=>sessionStorage.getItem(TOKEN_KEY)||'');
  const [connected,setConnected]=useState(false);const [caps,setCaps]=useState<Caps|null>(null);
  const [mode,setMode]=useState<'youtube'|'file'>('youtube');const [url,setUrl]=useState('');const [file,setFile]=useState<File|null>(null);
  const [authorized,setAuthorized]=useState(false);const [busy,setBusy]=useState(false);const [error,setError]=useState('');
@@ -28,19 +26,17 @@ export function OnlineStudio(){
  const [tab,setTab]=useState<'team'|'players'|'timeline'>('team');const [filter,setFilter]=useState<'all'|'unreviewed'|'A'|'B'>('unreviewed');
  const [selected,setSelected]=useState<string|null>(null);const [limit,setLimit]=useState(60);const [query,setQuery]=useState('');
  const fileInput=useRef<HTMLInputElement>(null);
- const token=useMemo(()=>key.trim(),[key]);
  async function api(path:string,init:RequestInit={}){
-   const headers=new Headers(init.headers);headers.set('X-VB-Stats-Key',token);
-   const res=await fetch(`${BASE}${path}`,{...init,headers});
+   const res=await fetch(`${BASE}${path}`,init);
    if(!res.ok){let detail=`Error ${res.status}`;try{const j=await res.json();if(typeof j.detail==='string')detail=j.detail;}catch{}throw Error(detail)}
    return await res.json();
  }
- useEffect(()=>{if(!token)return;let active=true;
-   const check=async()=>{try{const res=await fetch(`${BASE}/capabilities`,{headers:{'X-VB-Stats-Key':token}});if(!res.ok)throw Error(res.status===401?'Clave incorrecta':'Motor online desconectado');const c=await res.json() as Caps;if(active){setCaps(c);setConnected(true);setError('')}}catch(e){if(active){setConnected(false);setError(e instanceof Error?e.message:'Sin conexión')}}};
+ useEffect(()=>{let active=true;
+   const check=async()=>{try{const res=await fetch(`${BASE}/capabilities`);if(!res.ok){let message='La IA está temporalmente no disponible.';try{const data=await res.json();if(typeof data.detail==='string')message=data.detail;}catch{}throw Error(message)}const c=await res.json() as Caps;if(active){setCaps(c);setConnected(true);setError('')}}catch(e){if(active){setConnected(false);setError(e instanceof Error?e.message:'Sin conexión con la IA')}}};
    void check();const timer=window.setInterval(()=>void check(),12000);return()=>{active=false;window.clearInterval(timer)};
- },[token]);
- useEffect(()=>{if(!jobId||!token)return;let alive=true;
-   const poll=async()=>{try{const res=await fetch(`${BASE}/api/analysis/jobs/${jobId}`,{headers:{'X-VB-Stats-Key':token}});if(!res.ok)throw Error(res.status===404?'Este análisis ya no está disponible en el servidor.':'No se pudo consultar el análisis.');const j=await res.json() as Job;if(!alive)return;setJob(j);
+ },[]);
+ useEffect(()=>{if(!jobId)return;let alive=true;
+   const poll=async()=>{try{const res=await fetch(`${BASE}/api/analysis/jobs/${jobId}`);if(!res.ok)throw Error(res.status===404?'Este análisis ya no está disponible en el servidor.':'No se pudo consultar el análisis.');const j=await res.json() as Job;if(!alive)return;setJob(j);
     if(j.status==='completed'){
       if(j.autoAnalysis){const valid=sanitizeAuto(j.autoAnalysis);if(valid){setReport(valid);saveReport(valid);setReviews(getReviews(valid));setTab('team');setError('')}}
       sessionStorage.removeItem(JOB_KEY);setJobId('');
@@ -49,7 +45,7 @@ export function OnlineStudio(){
     }
    }catch(e){if(alive){setError(e instanceof Error?e.message:'Error de conexión')}}};
    void poll();const timer=window.setInterval(()=>void poll(),3500);return()=>{alive=false;window.clearInterval(timer)};
- },[jobId,token]);
+ },[jobId]);
  async function start(){if(!connected||!caps?.engines?.ravel?.ready){setError(caps?.engines?.ravel?.note||'IA no disponible');return;}if(mode==='youtube'&&!authorized){setError('Confirma que tienes permiso para procesar ese vídeo.');return;}
   setBusy(true);setError('');try{let r:{jobId:string};const common={chunkSeconds:600,teamAColor:'#265bac',teamBColor:'#b9373f'};
    if(mode==='youtube'){
@@ -61,7 +57,6 @@ export function OnlineStudio(){
    sessionStorage.setItem(JOB_KEY,r.jobId);setJobId(r.jobId);setJob({jobId:r.jobId,status:'queued',progress:0,stage:'Preparando el partido'});
   }catch(e){setError(e instanceof Error?e.message:'No se pudo iniciar')}finally{setBusy(false)}
  }
- function login(){if(password.length<12){setError('Introduce la clave de acceso de la beta privada.');return;}sessionStorage.setItem(TOKEN_KEY,password);setKey(password)}
  function updateReport(data:AutoAnalysis){setReport(data);saveReport(data)}
  function updateReview(id:string,review:Reviews[string]|null){const next={...reviews};if(review)next[id]=review;else delete next[id];setReviews(next);if(report)try{localStorage.setItem(keyFor(report),JSON.stringify(next));}catch{}}
  const metrics=useMemo(()=>report?autoMetrics(report):null,[report]);
@@ -72,15 +67,15 @@ export function OnlineStudio(){
    (!query||[e.jersey,e.trackKey,e.action,formatTime(e.second)].some(v=>v.toLowerCase().includes(query.toLowerCase()))))||[],[report,filter,query,reviews]);
  function lookupTeam(s:'A'|'B'){return s==='A'?teamA:teamB;}
  const youtubeId=/^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/live\/)([A-Za-z0-9_-]{11})/.exec(url)?.[1];
- return <div className="os-root"><header className="os-header"><div className="os-container os-header-in"><span className="os-brand-icon">◉</span><strong>VB STATS</strong><span className="os-stage">AI BETA</span><span className="os-grow"/><span className={connected?'os-connection ok':'os-connection'}>{connected?'● Motor online conectado':'○ Conexión privada'}</span></div></header>
+ return <div className="os-root"><header className="os-header"><div className="os-container os-header-in"><span className="os-brand-icon">◉</span><strong>VB STATS</strong><span className="os-stage">AI BETA</span><span className="os-grow"/><span className={connected?'os-connection ok':'os-connection'}>{connected?'● IA online disponible':'○ Comprobando IA…'}</span></div></header>
  <main className="os-container">
- <div className="os-warning"><ShieldCheck size={18}/> <span><strong>Beta con IA real:</strong> identifica posibles contactos y dorsales. Los resultados deportivos todavía requieren verificación para evitar estadísticas inventadas. Procesamiento restringido por clave.</span></div>
- {!connected&&<section className="os-login os-card"><div className="os-tag">ACCESO PRIVADO</div><h1>Estadísticas que ayudan a entrenar.</h1><p>Conecta el motor de IA para procesar grabaciones y construir informes por equipo y jugador.</p><label htmlFor="os-token">Clave de acceso a la beta</label><div className="os-login-row"><input id="os-token" type="password" autoComplete="off" placeholder="Clave configurada en Railway" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')login()}}/><button className="os-primary" onClick={login}>Conectar <ArrowRight size={16}/></button></div><small>La clave se conserva solo en esta pestaña. No está incluida en el código público ni en Cloudflare.</small></section>}
- {connected&&<section className="os-hero os-card"><div className="os-tag"><Activity size={14}/> MOTOR RAVEL-VB-013</div><h1>Del partido a las decisiones.</h1><p>Analiza el vídeo completo de forma automática. Consulta contactos, posibles acciones y dorsales; verifica resultados para calcular porcentajes de errores y eficiencia.</p><div className="os-mode"><button className={mode==='youtube'?'selected':''} onClick={()=>setMode('youtube')}><Youtube size={17}/> Enlace de YouTube</button><button className={mode==='file'?'selected':''} onClick={()=>setMode('file')}><FileVideo size={17}/> Subir un vídeo</button></div>
+ <div className="os-warning"><ShieldCheck size={18}/> <span><strong>Beta con IA real:</strong> identifica posibles contactos y dorsales. Los resultados deportivos todavía requieren verificación para evitar estadísticas inventadas. No hace falta registrarse. Durante las pruebas hay límites de uso para proteger el servicio.</span></div>
+ {!connected&&<div className="os-info" role="status"><AlertCircle size={16}/> {error||'Comprobando la disponibilidad del motor de IA…'} El resto de la web se puede explorar sin cuenta.</div>}
+ <section className="os-hero os-card"><div className="os-tag"><Activity size={14}/> MOTOR RAVEL-VB-013</div><h1>Del partido a las decisiones.</h1><p>Analiza el vídeo completo de forma automática. Consulta contactos, posibles acciones y dorsales; verifica resultados para calcular porcentajes de errores y eficiencia.</p><div className="os-mode"><button className={mode==='youtube'?'selected':''} onClick={()=>setMode('youtube')}><Youtube size={17}/> Enlace de YouTube</button><button className={mode==='file'?'selected':''} onClick={()=>setMode('file')}><FileVideo size={17}/> Subir un vídeo</button></div>
  <div className="os-source">{mode==='youtube'?<><label htmlFor="os-youtube">Enlace del partido</label><input id="os-youtube" type="url" placeholder="https://www.youtube.com/watch?v=..." value={url} onChange={e=>setUrl(e.target.value)}/><label className="os-checkbox"><input type="checkbox" checked={authorized} onChange={e=>setAuthorized(e.target.checked)}/> Tengo autorización para procesar esta grabación.</label></>:<><input type="file" accept="video/mp4,video/quicktime,video/webm" className="os-hidden" ref={fileInput} onChange={e=>setFile(e.target.files?.[0]||null)}/><button className="os-file" onClick={()=>fileInput.current?.click()}><UploadCloud size={20}/>{file?`${file.name} · ${(file.size/1048576).toFixed(1)} MB`:`Seleccionar vídeo (máx. ${caps?.maxUploadMB||384} MB)`}</button></>}
- <div className="os-submit"><span><LockKeyhole size={14}/> Acceso privado · Máximo {Math.round((caps?.maxAutoDurationSeconds||7200)/60)} min</span><button className="os-primary" disabled={busy||Boolean(jobId)||!caps?.engines?.ravel?.ready||(mode==='youtube'&&(!url||!authorized))||(mode==='file'&&!file)} onClick={()=>void start()}>{busy?'Preparando…':'Analizar partido completo'} <ChevronRight size={17}/></button></div></div>
+ <div className="os-submit"><span><LockKeyhole size={14}/> Sin cuenta · Máximo {Math.round((caps?.maxAutoDurationSeconds||7200)/60)} min</span><button className="os-primary" disabled={busy||Boolean(jobId)||!caps?.engines?.ravel?.ready||(mode==='youtube'&&(!url||!authorized))||(mode==='file'&&!file)} onClick={()=>void start()}>{busy?'Preparando…':'Analizar partido completo'} <ChevronRight size={17}/></button></div></div>
  {!caps?.engines?.ravel?.ready&&<div className="os-info"><AlertCircle size={16}/>{caps?.engines?.ravel?.note||'El motor aún no está listo.'}</div>}
- </section>}
+ </section>
  {jobId&&job&&<section className="os-progress os-card"><div className="os-progress-head"><div className="os-tag">PROCESAMIENTO EN CURSO</div><h2>{job.stage||'Analizando acciones del partido'}</h2><p>{job.phase==='downloading'?'Descargando grabación permitida…':`Tramos: ${job.processedSegments??0} de ${job.totalSegments??'—'}`}</p></div><div className="os-track"><div style={{width:`${Math.max(1,Math.min(100,job.phase==='downloading'?job.downloadProgress||0:job.progress||0))}%`}}/></div><small>{job.phase==='downloading'?'Descarga':'Inferencia de IA'} · {Math.round(job.phase==='downloading'?job.downloadProgress||0:job.progress||0)}% · Puedes dejar la pestaña abierta durante el análisis. El trabajo podría interrumpirse si se reinicia el servidor.</small></section>}
  {error&&<div className="os-error" role="alert"><AlertCircle size={17}/>{error}<button onClick={()=>setError('')}>Cerrar</button></div>}
  {report&&metrics&&perf&&<><section className="os-report-heading"><div><div className="os-tag">INFORME DEL PARTIDO · {report.engine.toUpperCase()}</div><h2>{report.sourceName}</h2><p>Hay datos automáticos provisionales y resultados deportivos comprobados por separado.</p></div><button className="os-secondary" onClick={()=>download('VB-Stats-Estadisticas-Verificadas.csv',performanceCSV(report,reviews))} disabled={perf.verified===0}><Download size={16}/> CSV verificado</button></section>
@@ -108,7 +103,7 @@ export function OnlineStudio(){
  <div className="os-report-footer">Las predicciones no equivalen a estadísticas oficiales. Para determinar resultados automáticos fiables habrá que validar un clasificador específico de finales de jugada y un modelo de marcador sobre retransmisiones reales.</div>
  </>}
  {!report&&<section className="os-future"><div><div className="os-tag">CÓMO SE TRABAJA EN VB STATS</div><h2>Una grabación. Las acciones. Un informe claro.</h2><p>No necesitas preparar dorsales ni anotar manualmente todo el partido. La IA busca contactos y trata de identificar jugadores; el informe te permite comprobar los resultados importantes antes de sacar conclusiones.</p></div><div className="os-steps"><div><span>01</span>Vídeo o YouTube</div><div><span>02</span>IA de seguimiento</div><div><span>03</span>Informe por jugador</div></div></section>}
- </main><footer className="os-footer">VB STATS · Beta privada · <a href="https://github.com/RubenIglesiasGarcia/VB-Stats" target="_blank" rel="noreferrer">Código en GitHub <ExternalLink size={12}/></a></footer></div>;
+ </main><footer className="os-footer">VB STATS · Acceso abierto · <a href="https://github.com/RubenIglesiasGarcia/VB-Stats" target="_blank" rel="noreferrer">Código en GitHub <ExternalLink size={12}/></a></footer></div>;
 }
 function EventEditor({event,review,teamA,teamB,onConfirm,onClear}:{event:AutoAnalysis['events'][number];review?:Reviews[string];teamA:string;teamB:string;onConfirm:(patch:{team:'A'|'B';jersey:string;action:Skill;outcome:Reviews[string]['outcome']})=>void;onClear:()=>void}){
  const [team,setTeam]=useState<'A'|'B'|''>(review?.team||event.team||'');
