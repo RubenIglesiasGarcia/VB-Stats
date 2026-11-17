@@ -18,13 +18,13 @@ def test_youtube_match_accepts_hour_plus_clip_and_minute_chunks():
     assert MAX_AUTO_SECONDS>=5033
     assert StartAutoJob(uploadId='00000000-0000-4000-8000-000000000000').chunkSeconds==60
 
-def test_picks_480_if_under_space_budget(youtube_formats):
+def test_hour_plus_match_fits_at_360p(youtube_formats):
     selected,height,_=compact_video_format(youtube_formats,5033,350*1024*1024)
-    assert (selected,height)==('480',480)
-
-def test_downshifts_if_long_stream_cannot_fit(youtube_formats):
-    selected,height,_=compact_video_format(youtube_formats,7200,300*1024*1024)
     assert (selected,height)==('360',360)
+
+def test_downshifts_two_hour_match_to_240p(youtube_formats):
+    selected,height,_=compact_video_format(youtube_formats,7200,300*1024*1024)
+    assert (selected,height)==('240',240)
 
 def test_does_not_choose_full_hd_for_long_matches(youtube_formats):
     selected,height,_=compact_video_format(youtube_formats,5033,1_500_000_000)
