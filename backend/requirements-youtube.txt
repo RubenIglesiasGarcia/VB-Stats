@@ -1,3 +1,6 @@
 # yt-dlp uses YouTube's public website; no API key, login or cookies.
-# Current YouTube extraction may require yt-dlp-ejs and Node.js; app uses Node 20+.
+# JavaScript challenge support needs yt-dlp-ejs plus Node.js >=22, both verified in Docker build.
 yt-dlp[default]>=2026.10
+
+# Explicit dependency makes a missing JS challenge solver a build error, not a runtime surprise.
+yt-dlp-ejs
