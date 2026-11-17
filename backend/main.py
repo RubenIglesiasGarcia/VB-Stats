@@ -387,6 +387,26 @@ def _run_youtube_auto_job(jid: str, uid: str, options: StartYouTubeJob) -> None:
         shutil.rmtree(folder,ignore_errors=True)
 
 
+def _claim_gemini_daily_quota() -> None:
+    """Small, fail-closed quota on the persistent Railway volume (one API worker)."""
+    limit=max(0,min(50,int(os.getenv('VBSTATS_GEMINI_DAILY_LIMIT','2'))))
+    date=time.strftime('%Y-%m-%d',time.gmtime())
+    path=DATA_DIR/'gemini-daily-quota.json'
+    try:
+        DATA_DIR.mkdir(parents=True,exist_ok=True)
+        record=__import__('json').loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+        used=int(record.get('used',0)) if record.get('date')==date else 0
+        if used>=limit:
+            raise HTTPException(429,'Se ha alcanzado el límite diario de análisis de YouTube. Vuelve mañana.')
+        staged=path.with_suffix('.tmp')
+        staged.write_text(__import__('json').dumps({'date':date,'used':used+1}),encoding='utf-8')
+        staged.replace(path)
+    except HTTPException:
+        raise
+    except (OSError,ValueError,TypeError):
+        raise HTTPException(503,'No se ha podido comprobar el límite diario de análisis.') from None
+
+
 def _run_gemini_youtube_job(jid: str, url: str) -> None:
     """Direct YouTube observation with no Railway media download."""
     def mutate(**items):
@@ -424,6 +444,8 @@ def start_youtube_analysis(opts:StartYouTubeJob):
         if running>=MAX_QUEUED:raise HTTPException(429,'La cola de análisis está llena.')
         if not gemini_ready and (len(uploads)>=MAX_STORED or sum(i['size'] for i in uploads.values())>MAX_TOTAL_DISK-64*1024*1024):
             raise HTTPException(507,'Almacenamiento temporal lleno.')
+        if gemini_ready:
+            _claim_gemini_daily_quota()
         jid=str(uuid4());uid=str(uuid4())
         jobs[jid]={'jobId':jid,'uploadId':uid,'status':'queued',
                    'phase':'analysis' if gemini_ready else 'downloading',
