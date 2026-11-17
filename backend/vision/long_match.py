@@ -33,6 +33,8 @@ def compact_video_format(info: dict[str, Any], duration_seconds: float, max_byte
         if fmt.get("has_drm"):
             continue
         height = int(height)
+        if duration_seconds >= 3600 and height > 480:
+            continue  # Preserve memory and disk headroom for hour-plus matches.
         estimated = estimate_bytes(fmt, duration_seconds)
         if estimated is not None and estimated > int(max_bytes * 0.85):
             continue
